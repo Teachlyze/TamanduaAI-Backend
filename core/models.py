@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.postgres.fields import ArrayField
 
 # 1. Usuários
 class User(models.Model):

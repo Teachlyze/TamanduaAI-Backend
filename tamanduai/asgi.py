@@ -1,5 +1,5 @@
 """
-ASGI config for escola project.
+ASGI config for tamanduai project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
@@ -8,9 +8,7 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/asgi/
 """
 
 import os
-
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'escola.settings')
-
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tamanduai.settings')
 application = get_asgi_application()
