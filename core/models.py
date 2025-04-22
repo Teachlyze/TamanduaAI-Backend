@@ -1,6 +1,7 @@
 from django.db import models
 
-# 1. Usuários
+# 1 - Usuários
+
 class User(models.Model):
     full_name = models.CharField(max_length=150)
     email = models.EmailField(max_length=150, unique=True)
@@ -17,13 +18,13 @@ class User(models.Model):
         return f'{self.full_name} - {" / ".join(filter(None, roles))}'
 
 
-# 2. Perfis adicionais
+# 2 - Perfis adicionais
 class Profile(models.Model):
     user = models.OneToOneField(User, primary_key=True, on_delete=models.CASCADE, related_name='profile')
     age = models.IntegerField(null=True, blank=True)
     school = models.CharField(max_length=150, null=True, blank=True)
     teaching_area = models.CharField(max_length=100, null=True, blank=True)
-    disciplines = models.TextField(blank=True, null=True, help_text="Lista de disciplinas separadas por vírgula")
+    disciplines = models.TextField(blank=True, null=True, help_text="Lista de disciplinas")
     experience_years = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -33,20 +34,18 @@ class Profile(models.Model):
 
     @property
     def disciplines_list(self):
-        """Retorna a lista de disciplinas como uma lista Python"""
         if not self.disciplines:
             return []
         return [d.strip() for d in self.disciplines.split(',')]
 
     def set_disciplines(self, disciplines_list):
-        """Define as disciplinas a partir de uma lista Python"""
         if not disciplines_list:
             self.disciplines = None
         else:
             self.disciplines = ','.join(disciplines_list)
 
 
-# 3. Planos de acesso
+# 3 - Planos de acesso (mudar para integracao com a API do Stripe)
 class Plan(models.Model):
     name = models.CharField(max_length=50)
     price_cents = models.IntegerField()
@@ -56,7 +55,7 @@ class Plan(models.Model):
         return self.name
 
 
-# 4. Pagamentos
+# 4 - Pagamentos (mudar para integracao com a API do Stripe)
 class Payment(models.Model):
     METHOD_CHOICES = (
         ('PIX', 'PIX'),
@@ -94,8 +93,7 @@ class Payment(models.Model):
     @classmethod
     def get_payments_with_related(cls, user_id=None, status=None):
         """
-        Método para buscar pagamentos com dados relacionados otimizados
-        Usa select_related para carregar user e plan em uma única consulta
+        busca pagamentos com dados relacionados otimizados
         """
         queryset = cls.objects.select_related('user', 'plan')
         
@@ -109,21 +107,18 @@ class Payment(models.Model):
     @classmethod
     def get_user_payments_with_details(cls, user_id):
         """
-        Método para buscar pagamentos de um usuário com todos os detalhes relacionados
-        Usa select_related para otimizar as consultas
+        busca pagamentos de um usuário com todos os detalhes relacionados
         """
         return cls.objects.select_related(
             'user',
             'plan',
-            'user__profile'  # Acessando o perfil do usuário
+            'user__profile'  # pra acessanr o perfil do usuário
         ).filter(user_id=user_id)
 
     def save(self, *args, **kwargs):
-        """
-        Sobrescrevendo o método save para garantir consistência nos cálculos
-        """
+
         if not self.amount:
-            self.amount = self.plan.price_cents / 100  # Convertendo de centavos para reais
+            self.amount = self.plan.price_cents / 100  
         super().save(*args, **kwargs)
 
     @property
@@ -141,13 +136,14 @@ class Payment(models.Model):
         return f'R$ {self.amount:,.2f}'
 
 
-# 5. Turmas
+# 5 - Turmas
 class ClassModel(models.Model):
     STATUS_CHOICES = (
         ('active', 'Ativa'),
         ('inactive', 'Inativa'),
     )
 
+    # Para criar uma turma, o usuário que a cria deve ser professor.
     professor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='classes')
     name = models.CharField(max_length=100)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES)
@@ -157,7 +153,7 @@ class ClassModel(models.Model):
         return self.name
 
 
-# 6. Convites para turmas
+# 6 - Convites para turmas
 class Invite(models.Model):
     class_invite = models.ForeignKey(ClassModel, on_delete=models.CASCADE, related_name='invites')
     code = models.CharField(max_length=32, unique=True)
@@ -171,7 +167,7 @@ class Invite(models.Model):
         return self.code
 
 
-# 7. Associação turma ⇄ aluno
+# 7 - Associação turma pra aluno
 class ClassStudent(models.Model):
     class_instance = models.ForeignKey(ClassModel, on_delete=models.CASCADE, related_name='class_students')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='student_classes')
@@ -190,7 +186,7 @@ class ClassStudent(models.Model):
         return f'{self.student.full_name} na turma {self.class_instance.name}'
 
 
-# 8. Atividades
+# 8 - Atividades
 class Activity(models.Model):
     STATUS_CHOICES = (
         ('draft', 'Rascunho'),
@@ -211,7 +207,7 @@ class Activity(models.Model):
         return self.title
 
 
-# 9. Associação atividade ⇄ turma
+# 9 - Associação atividade pra turma
 class ActivityClass(models.Model):
     activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name='activity_classes')
     class_instance = models.ForeignKey(ClassModel, on_delete=models.CASCADE, related_name='activity_classes')
@@ -227,7 +223,7 @@ class ActivityClass(models.Model):
         return f'Atividade {self.activity.title} na turma {self.class_instance.name}'
 
 
-# 10. Submissões de atividades
+# 10 - Submissões de atividades
 class Submission(models.Model):
     STATUS_CHOICES = (
         ('pending', 'Pendente'),
@@ -253,7 +249,7 @@ class Submission(models.Model):
         return f'Submissão de {self.student.full_name} para {self.activity.title}'
 
 
-# 11. Feedbacks
+# 11 - Feedbacks
 class Feedback(models.Model):
     submission = models.ForeignKey(Submission, on_delete=models.CASCADE, related_name='feedbacks')
     professor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='feedbacks')
