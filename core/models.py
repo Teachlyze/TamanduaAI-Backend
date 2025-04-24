@@ -1,21 +1,83 @@
 from django.db import models
+# Importar os managers e bases do Django Auth
+from django.contrib.auth.models import BaseUserManager, AbstractBaseUser, PermissionsMixin
+from django.contrib.auth.hashers import make_password # Para garantir que a senha é hashed
 
-# 1 - Usuários
 
-class User(models.Model):
+# Crie seu Manager Customizado que herda de BaseUserManager
+class CustomUserManager(BaseUserManager):
+    # Implementar create_user e create_superuser aqui
+    # (Copie a implementação dos métodos que mostrei na resposta anterior)
+
+    def create_user(self, email, password=None, **extra_fields):
+        """Cria e salva um Usuário comum."""
+        if not email:
+            raise ValueError('Usuários devem ter um endereço de e-mail')
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        if password:
+            user.set_password(password) # Use set_password aqui
+        user.save(using=self._db)
+        Profile.objects.create(user=user) # Criar perfil junto
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        """Cria e salva um Superusuário."""
+        extra_fields.setdefault('is_staff', True) # Necessário se usar PermissionsMixin
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True) # Superuser deve ser ativo
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+
+        return self.create_user(email, password, **extra_fields) # Chame create_user aqui
+
+
+# Altere a definição da sua classe User
+# Deve herdar de AbstractBaseUser (para campos auth e métodos básicos)
+# E PermissionsMixin (para is_superuser, grupos, etc.)
+class User(AbstractBaseUser, PermissionsMixin): # <-- MUDANÇA ESSENCIAL
     full_name = models.CharField(max_length=150)
     email = models.EmailField(max_length=150, unique=True)
     cpf = models.CharField(max_length=11, unique=True)
-    password_hash = models.CharField(max_length=255)
+
+    # REMOVA ESTE CAMPO se herdar de AbstractBaseUser:
+    # password_hash = models.CharField(max_length=255)
+
     is_teacher = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     verified_email = models.BooleanField(default=False)
     verification_code = models.CharField(max_length=6, blank=True, null=True)
     verification_sent_at = models.DateTimeField(blank=True, null=True)
 
+    # CAMPOS ADICIONADOS POR ABSTRATBASEUSER E PERMISSIONSMIXIN (ou definidos por você)
+    is_active = models.BooleanField(default=True) # Necessário para AbstractBaseUser
+    is_staff = models.BooleanField(default=False) # Necessário se usar PermissionsMixin (para Admin site)
+    # is_superuser é fornecido por PermissionsMixin
+
+    # Associe seu Manager customizado
+    objects = CustomUserManager() # <-- MUDANÇA ESSENCIAL
+
+    # Defina o campo que será o username para login
+    USERNAME_FIELD = 'email' # <-- MUDANÇA ESSENCIAL
+    # Defina os campos obrigatórios na criação via createsuperuser
+    REQUIRED_FIELDS = ['full_name', 'cpf'] # <-- MUDANÇA ESSENCIAL
+
+
+    class Meta:
+         # Manter índices e outras opções
+         # ...
+         pass # Exemplo simplificado
+
     def __str__(self):
-        roles = ['Professor' if self.is_teacher else '', 'Aluno']
-        return f'{self.full_name} - {" / ".join(filter(None, roles))}'
+        # Mantenha seu __str__ ou ajuste para incluir is_staff/is_superuser se usar PermissionsMixin
+        # ...
+        return self.email # Exemplo simples
+
+    # Métodos necessários se usar PermissionsMixin (has_perm, has_module_perms)
+    # (Copie os métodos que mostrei na resposta anterior ou implemente-os)
 
 
 # 2 - Perfis adicionais
@@ -45,7 +107,7 @@ class Profile(models.Model):
             self.disciplines = ','.join(disciplines_list)
 
 
-# 3 - Planos de acesso (mudar para integracao com a API do Stripe)
+# 3 - Planos de acesso (mudar para integracao com a API da Appmax)
 class Plan(models.Model):
     name = models.CharField(max_length=50)
     price_cents = models.IntegerField()
@@ -55,7 +117,7 @@ class Plan(models.Model):
         return self.name
 
 
-# 4 - Pagamentos (mudar para integracao com a API do Stripe)
+# 4 - Pagamentos (mudar para integracao com a API da Appmax)
 class Payment(models.Model):
     METHOD_CHOICES = (
         ('PIX', 'PIX'),
@@ -134,6 +196,38 @@ class Payment(models.Model):
         Propriedade para obter o valor formatado em reais
         """
         return f'R$ {self.amount:,.2f}'
+
+
+# 4.1 - Assinaturas recorrentes (Appmax)
+class Subscription(models.Model):
+    STATUS_CHOICES = (
+        ('active', 'Ativa'),
+        ('cancelled', 'Cancelada'),
+        ('past_due', 'Atrasada'),
+        ('expired', 'Expirada'),
+        ('pending', 'Pendente'),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='subscriptions')
+    plan = models.ForeignKey(Plan, on_delete=models.RESTRICT, related_name='subscriptions')
+    appmax_subscription_id = models.CharField(max_length=100, unique=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES)
+    started_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['plan']),
+            models.Index(fields=['status']),
+            models.Index(fields=['appmax_subscription_id']),
+        ]
+        unique_together = (('user', 'plan'),)
+
+    def __str__(self):
+        return f'Assinatura {self.appmax_subscription_id} de {self.user.full_name} ({self.status})'
 
 
 # 5 - Turmas
